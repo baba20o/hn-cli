@@ -72,6 +72,81 @@ def _format_hit(hit: dict) -> dict:
     }
 
 
+_STOP_WORDS = frozenset({
+    "a", "an", "the", "in", "on", "at", "to", "for", "of", "with", "by",
+    "from", "is", "are", "was", "were", "be", "been", "being", "has", "have",
+    "had", "do", "does", "did", "will", "would", "could", "should", "may",
+    "might", "shall", "can", "and", "or", "but", "not", "no", "if", "then",
+    "than", "that", "this", "these", "those", "it", "its", "vs", "about",
+})
+
+
+def _normalize_query(query: str) -> str:
+    """Auto-quote unquoted multi-word queries for AND-like matching.
+
+    Algolia treats unquoted multi-word queries as loose OR matching, which
+    returns irrelevant results (e.g. "function calling MCP comparison" matches
+    comments about Prolog function calling with zero mention of MCP).
+
+    Strategy: extract up to 3 key terms (skipping stop words), quote each one.
+    This gives AND-like behavior without being so strict that results vanish.
+    Already-quoted phrases are preserved and count toward the 3-term limit.
+
+    Examples:
+        "MCP function calling"           → '"MCP" "function" "calling"'
+        "Codex free tier ChatGPT Plus"   → '"Codex" "free" "tier"'
+        '"Claude Code" vs Codex'         → '"Claude Code" "Codex"'
+        "Codex pricing"                  → '"Codex" "pricing"'
+        "MCP"                            → 'MCP'  (single word, no change)
+    """
+    stripped = query.strip()
+    if not stripped:
+        return stripped
+
+    # Single word — no quoting needed
+    if '"' not in stripped and ' ' not in stripped:
+        return stripped
+
+    # Extract already-quoted phrases and unquoted words
+    quoted_parts: List[str] = []
+    unquoted_words: List[str] = []
+    i = 0
+    while i < len(stripped):
+        if stripped[i] == '"':
+            end = stripped.find('"', i + 1)
+            if end == -1:
+                end = len(stripped)
+            quoted_parts.append(stripped[i:end + 1])
+            i = end + 1
+        elif stripped[i] == ' ':
+            i += 1
+        else:
+            end = i
+            while end < len(stripped) and stripped[end] not in (' ', '"'):
+                end += 1
+            unquoted_words.append(stripped[i:end])
+            i = end
+
+    # If everything is already quoted, return as-is
+    if not unquoted_words:
+        return ' '.join(quoted_parts)
+
+    # Filter stop words from unquoted terms
+    key_words = [w for w in unquoted_words if w.lower() not in _STOP_WORDS]
+    if not key_words:
+        key_words = unquoted_words  # fallback: use all if everything is a stop word
+
+    # Budget: up to 3 total quoted terms (including pre-quoted phrases)
+    budget = max(3 - len(quoted_parts), 1)
+    selected = key_words[:budget]
+
+    # Build result: pre-quoted phrases first, then selected keywords quoted
+    result = list(quoted_parts)
+    for w in selected:
+        result.append(f'"{w}"')
+    return ' '.join(result)
+
+
 class HNClient:
     """Client for the HN Algolia Search API."""
 
@@ -97,7 +172,8 @@ class HNClient:
         """Search HN by relevance.
 
         Args:
-            query: Full-text search query.
+            query: Full-text search query. Multi-word queries are auto-quoted
+                   for AND-like matching. Use explicit quotes for exact phrases.
             tags: Filter tags — story, comment, show_hn, ask_hn, poll, job,
                   front_page, author_USERNAME, story_ID.
                   ANDed by default, use parens for OR: (story,poll)
@@ -105,6 +181,7 @@ class HNClient:
             page: Zero-indexed page number.
             hits_per_page: Results per page (max 1000).
         """
+        query = _normalize_query(query)
         params = {"query": query, "page": page, "hitsPerPage": hits_per_page}
         if tags:
             params["tags"] = tags
@@ -124,6 +201,7 @@ class HNClient:
 
         Same parameters as search().
         """
+        query = _normalize_query(query)
         params = {"query": query, "page": page, "hitsPerPage": hits_per_page}
         if tags:
             params["tags"] = tags

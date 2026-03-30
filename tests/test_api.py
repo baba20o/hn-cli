@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hn.api import HNClient, _format_hit, _ts_from_datestr, _retry_wait_seconds
+from hn.api import HNClient, _format_hit, _ts_from_datestr, _retry_wait_seconds, _normalize_query
 
 
 # ── Fixtures ──────────────────────────────────────────────
@@ -317,3 +317,56 @@ def test_search_story_comments(mock_rl):
         call_args = mock_get.call_args
         assert "story_12345" in call_args[1]["params"]["tags"]
         assert "comment" in call_args[1]["params"]["tags"]
+
+
+# ── Query Normalization ──────────────────────────────────
+
+
+class TestNormalizeQuery:
+    """Test _normalize_query for AND-like matching on Algolia."""
+
+    def test_single_word_unchanged(self):
+        assert _normalize_query("MCP") == "MCP"
+
+    def test_empty_unchanged(self):
+        assert _normalize_query("") == ""
+
+    def test_two_words_both_quoted(self):
+        result = _normalize_query("Codex pricing")
+        assert '"Codex"' in result
+        assert '"pricing"' in result
+
+    def test_three_words_all_quoted(self):
+        result = _normalize_query("MCP function calling")
+        assert '"MCP"' in result
+        assert '"function"' in result
+        assert '"calling"' in result
+
+    def test_many_words_capped_at_three(self):
+        """Queries with 5+ words should only quote up to 3 key terms."""
+        result = _normalize_query("Codex free tier ChatGPT Plus included")
+        # Should have at most 3 quoted terms
+        assert result.count('"') <= 6  # 3 pairs of quotes
+
+    def test_stop_words_skipped(self):
+        result = _normalize_query("Claude Code vs Codex")
+        assert '"vs"' not in result
+        assert '"Claude"' in result
+
+    def test_prequoted_preserved(self):
+        result = _normalize_query('"Claude Code" vs Codex')
+        assert '"Claude Code"' in result
+        assert '"Codex"' in result
+        assert '"vs"' not in result
+
+    def test_prequoted_counts_toward_budget(self):
+        result = _normalize_query('"Claude Code" "Codex CLI" comparison features')
+        assert '"Claude Code"' in result
+        assert '"Codex CLI"' in result
+        # Budget is 3 total, 2 pre-quoted, so only 1 more
+        assert '"comparison"' in result
+        assert '"features"' not in result
+
+    def test_all_prequoted_passthrough(self):
+        q = '"Claude Code" "Codex CLI"'
+        assert _normalize_query(q) == q

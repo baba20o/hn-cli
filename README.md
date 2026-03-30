@@ -81,6 +81,23 @@ All search commands support:
 | `--no-cache` | Disable response caching |
 | `--debug` | Enable debug logging |
 
+## Query Tips
+
+Multi-word queries are **auto-quoted** for AND-like matching. Algolia's default is loose OR matching, which returns irrelevant results for multi-term queries. The CLI automatically quotes up to 3 key terms (skipping stop words) so all terms must appear in results.
+
+| You type | CLI sends to Algolia | Why |
+|----------|---------------------|-----|
+| `MCP function calling` | `"MCP" "function" "calling"` | All 3 terms required |
+| `Codex free tier ChatGPT Plus` | `"Codex" "free" "tier"` | Capped at 3 key terms |
+| `"Claude Code" vs Codex` | `"Claude Code" "Codex"` | Pre-quoted phrase preserved, stop word "vs" skipped |
+| `MCP` | `MCP` | Single word unchanged |
+
+**For best results:**
+- Use 2-3 specific terms, not full sentences
+- Pre-quote multi-word phrases: `"Claude Code" "rate limiting"`
+- Use `--points` or `--comments` filters to find high-signal results
+- Prefer `hn comments` for developer sentiment and `hn stories` for news
+
 ## Examples
 
 ```bash
@@ -107,6 +124,11 @@ hn search "startup" -n 100 -j | jq '.hits[].title'
 
 # Markdown for reports
 hn popular "LLM" --min-points 200 -m >> research-notes.md
+
+# Developer sentiment on pricing (good query patterns)
+hn comments "Codex pricing" --limit 10
+hn comments '"Claude Code" "rate limit"' --limit 10
+hn comments "MCP security" --limit 5 -m
 ```
 
 ## API

@@ -47,9 +47,9 @@ hn search "LLM" -m
 | Command | Description |
 |---------|-------------|
 | `hn popular [query]` | Stories above a point threshold (default: 100) |
-| `hn hot [query]` | Stories with heavy discussion (default: 100+ comments) |
+| `hn hot [query]` | Stories with heavy discussion (default: more than 100 comments) |
 | `hn author <username>` | Posts by a specific author |
-| `hn date-range <query> --from YYYY-MM-DD --to YYYY-MM-DD` | Search within a date range |
+| `hn date-range <query> --from YYYY-MM-DD --to YYYY-MM-DD` | Search within a date range (dates are UTC) |
 | `hn thread <story_id>` | Search comments within a story thread |
 
 ### Lookup
@@ -67,19 +67,37 @@ hn search "LLM" -m
 
 ## Common Options
 
-All search commands support:
+All search and filter commands support:
 
 | Flag | Description |
 |------|-------------|
 | `-n, --limit` | Results per page (default: 20, max: 1000) |
 | `-p, --page` | Page number (0-indexed) |
-| `--points` | Minimum points filter |
-| `--comments` | Minimum comments filter |
-| `-t, --tags` | Tag filters: `story`, `comment`, `show_hn`, `ask_hn`, `job`, `front_page` |
-| `-j, --json-output` | Raw JSON output |
-| `-m, --markdown` | Markdown table output |
-| `--no-cache` | Disable response caching |
+| `-j, --json-output` | JSON output (search hits use normalized fields such as `id`, `title`, `author`, `points`, `num_comments`, `hn_url`) |
+| `-m, --markdown` | Markdown output |
+
+`hn item` and `hn user` support only `-j` and `-m`.
+
+Some commands add their own filters:
+
+| Flag | Commands | Description |
+|------|----------|-------------|
+| `--points N` | `search`, `recent`, `stories`, `show-hn`, `ask-hn` | Only items with more than N points |
+| `--comments N` | `search`, `recent` | Only items with more than N comments |
+| `-t, --tags` | `search`, `recent`, `date-range` | Tag filters: `story`, `comment`, `show_hn`, `ask_hn`, `job`, `front_page` |
+
+`popular` (`--min-points`), `hot` (`--min-comments`), `author` (`--type`, `-q`) and `thread` (`-q`) have the options shown in [Examples](#examples). Run `hn <command> --help` for the exact list.
+
+Global options go **before** the command name:
+
+| Flag | Description |
+|------|-------------|
+| `--no-cache` | Disable response caching for this run |
 | `--debug` | Enable debug logging |
+
+```bash
+hn --no-cache recent "Claude Code"
+```
 
 ## Query Tips
 
@@ -101,10 +119,10 @@ Multi-word queries are **auto-quoted** for AND-like matching. Algolia's default 
 ## Examples
 
 ```bash
-# Popular AI stories with 500+ points
+# Popular AI stories with more than 500 points
 hn popular "AI" --min-points 500
 
-# Hot discussions about Rust with 200+ comments
+# Hot discussions about Rust with more than 200 comments
 hn hot "rust" --min-comments 200
 
 # pg's stories
@@ -133,7 +151,7 @@ hn comments "MCP security" --limit 5 -m
 
 ## API
 
-No API key required. Rate limit: 10,000 requests/hour. The CLI rate-limits to 1 request/second and caches responses for 1 hour.
+No API key required. Rate limit: 10,000 requests/hour. The CLI rate-limits to 1 request/second, shared across concurrent `hn` processes through `~/.hn/rate_limit.db`, and caches successful responses for 1 hour in `~/.hn_cache/` (`hn clear-cache` empties it; `hn --no-cache ...` bypasses it).
 
 - Base URL: `https://hn.algolia.com/api/v1`
 - Endpoints: `/search` (relevance), `/search_by_date` (date), `/items/:id`, `/users/:username`
